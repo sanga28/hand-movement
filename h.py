@@ -4,22 +4,28 @@ import numpy as np
 import serial
 import time
 
-# Initialize MediaPipe Hands
 mp_hands = mp.solutions.hands
-mp_draw = mp.solutions.drawing_utils
-hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.7)
+hands = mp_hands.Hands(static_image_mode=False, max_num_hands=2, min_detection_confidence=0.5)
+mp_drawing = mp.solutions.drawing_utils
 
-# Function to calculate the angle between three points
 def calculate_angle(a, b, c):
-    a, b, c = np.array(a), np.array(b), np.array(c)
+    a = np.array(a)  
+    b = np.array(b)  
+    c = np.array(c)  
+
     ba = a - b
     bc = c - b
+
     cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
     angle = np.degrees(np.arccos(np.clip(cosine_angle, -1.0, 1.0)))
+
     return round(angle, 2)
-ser = serial.Serial('COM4', 115200, timeout=1)
-time.sleep(2)  # Allow ESP32 to reset
-# Open webcam
+
+
+ser = serial.Serial('COM6', 115200, timeout=1)
+time.sleep(2)  
+
+
 cap = cv2.VideoCapture(0)
 if not cap.isOpened():
     print("Error: Could not open webcam. Check camera permissions!")
@@ -38,54 +44,63 @@ while True:
         for hand_landmarks in results.multi_hand_landmarks:
             lm = hand_landmarks.landmark
 
-            # Extract key points
             wrist = (lm[0].x, lm[0].y, lm[0].z)
 
-            # Thumb joints
+            
             thumb_cmc = (lm[1].x, lm[1].y, lm[1].z)
             thumb_mcp = (lm[2].x, lm[2].y, lm[2].z)
             thumb_ip = (lm[3].x, lm[3].y, lm[3].z)
             thumb_tip = (lm[4].x, lm[4].y, lm[4].z)
 
-            # Index finger joints
             index_mcp = (lm[5].x, lm[5].y, lm[5].z)
             index_pip = (lm[6].x, lm[6].y, lm[6].z)
             index_dip = (lm[7].x, lm[7].y, lm[7].z)
             index_tip = (lm[8].x, lm[8].y, lm[8].z)
 
-            # Middle finger joints
             middle_mcp = (lm[9].x, lm[9].y, lm[9].z)
             middle_pip = (lm[10].x, lm[10].y, lm[10].z)
             middle_dip = (lm[11].x, lm[11].y, lm[11].z)
             middle_tip = (lm[12].x, lm[12].y, lm[12].z)
 
-            # Ring finger joints
             ring_mcp = (lm[13].x, lm[13].y, lm[13].z)
             ring_pip = (lm[14].x, lm[14].y, lm[14].z)
             ring_dip = (lm[15].x, lm[15].y, lm[15].z)
             ring_tip = (lm[16].x, lm[16].y, lm[16].z)
 
-            # Pinky finger joints
             pinky_mcp = (lm[17].x, lm[17].y, lm[17].z)
             pinky_pip = (lm[18].x, lm[18].y, lm[18].z)
             pinky_dip = (lm[19].x, lm[19].y, lm[19].z)
             pinky_tip = (lm[20].x, lm[20].y, lm[20].z)
 
-            # Calculate finger bending angles
-            thumb_angle = 180 - calculate_angle(thumb_mcp, thumb_ip, thumb_tip)
-            index_angle = 180 - calculate_angle(index_mcp, index_pip, index_tip)
-            middle_angle = 180 - calculate_angle(middle_mcp, middle_pip, middle_tip)
-            ring_angle = 180 - calculate_angle(ring_mcp, ring_pip, ring_tip)
-            pinky_angle = 180 - calculate_angle(pinky_mcp, pinky_pip, pinky_tip)
+            
 
-            # Calculate thumb movement
-            thumb_horizontal = calculate_angle(thumb_mcp, wrist, index_mcp)  # Sideways movement
-            thumb_vertical = calculate_angle(thumb_cmc, thumb_mcp, thumb_tip)  # Up/down movement
+            def map_value(value, in_min=0, in_max=180, out_min=0, out_max=10):
+                return round((value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min, 2)
 
-            # Draw landmarks
-            mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+            def map_finger_angles():
+                return {
+                    "thumb_angle": map_value(180 - calculate_angle(thumb_mcp, thumb_ip, thumb_tip)),
+                    "index_angle": map_value(180 - calculate_angle(index_mcp, index_pip, index_tip)),
+                    "middle_angle": map_value(180 - calculate_angle(middle_mcp, middle_pip, middle_tip)),
+                    "ring_angle": map_value(180 - calculate_angle(ring_mcp, ring_pip, ring_tip)),
+                    "pinky_angle": map_value(180 - calculate_angle(pinky_mcp, pinky_pip, pinky_tip)),
+                    "thumb_horizontal": map_value(calculate_angle(thumb_mcp, wrist, index_mcp)),
+                    "thumb_vertical": map_value(calculate_angle(thumb_cmc, thumb_mcp, thumb_tip))
+                }
 
-            # Display angles on screen
+            # Usage
+            mapped_values = map_finger_angles()
+
+            data = f"ind_{mapped_values['index_angle']}:mid_{mapped_values['middle_angle']}:rin_{mapped_values['ring_angle']}:lit_{mapped_values['pinky_angle']}:thu_{mapped_values['thumb_angle']}:ths_{mapped_values['thumb_vertical']}\n"
+            ser.write(data.encode())
+
+            
+
+
+           
+            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+            
             cv2.putText(frame, f"Thumb Bend: {thumb_angle}°", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
             cv2.putText(frame, f"Thumb Horizontal: {thumb_horizontal}°", (50, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
             cv2.putText(frame, f"Thumb Vertical: {thumb_vertical}°", (50, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
@@ -95,33 +110,12 @@ while True:
             cv2.putText(frame, f"Ring: {ring_angle}°", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
             cv2.putText(frame, f"Pinky: {pinky_angle}°", (50, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
 
-    # Show the webcam feed
     cv2.imshow("Hand Tracking - Finger Angles", frame)
 
-    # Press 'q' to exit
+    
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
 cap.release()
 cv2.destroyAllWindows()
-
-
-# Finger joints for angles
-            fingers = {
-                'thumb': (4, 3, 2),  
-                'index': (8, 7, 6),
-                'middle': (12, 11, 10),
-                'ring': (16, 15, 14),
-                'pinky': (20, 19, 18)
-            }
-
-            angles = {}
-            for finger, (a, b, c) in fingers.items():
-                angle = calculate_angle(landmarks[a], landmarks[b], landmarks[c])
-                angles[finger] = round(angle, 2)
-
-            thumb_side_angle = calculate_angle(landmarks[2], landmarks[0], landmarks[5])
-            angles['thumb_side_angle'] = round(thumb_side_angle, 2)
-
-            angle_string = f"ind_{angles['index']}:mid_{angles['middle']}:rin_{angles['ring']}:lit_{angles['pinky']}:thu_{angles['thumb']}:ths_{angles['thumb_side_angle']}\n"
-            ser.write(angle_string.encode())
+ser.close()
