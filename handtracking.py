@@ -19,7 +19,7 @@ def map_value(value, in_min=0, in_max=180, out_min=0, out_max=10):
     return round((value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min, 2)
 
 # Connect to Arduino
-ser = serial.Serial('COM7', 115200, timeout=1)
+ser = serial.Serial('COM5', 115200, timeout=1)
 time.sleep(2)
 
 cap = cv2.VideoCapture(0)
